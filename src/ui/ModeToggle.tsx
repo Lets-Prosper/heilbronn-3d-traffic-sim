@@ -1,0 +1,19 @@
+import { useSimStore } from '../state/simStore'
+
+/** The big A/B switch. Both modes are always running; this picks which one the city shows. */
+export function ModeToggle() {
+  const view = useSimStore((s) => s.view)
+  const setView = useSimStore((s) => s.setView)
+  const smart = view === 'maxPressure'
+  return (
+    <div className="mode-toggle" data-smart={smart}>
+      <button aria-pressed={!smart} onClick={() => setView('fixed')}>
+        <span className="tag">A</span> Fixed loop
+      </button>
+      <button aria-pressed={smart} onClick={() => setView('maxPressure')}>
+        <span className="tag">B</span> Smart control
+      </button>
+      <span className="knob" aria-hidden />
+    </div>
+  )
+}

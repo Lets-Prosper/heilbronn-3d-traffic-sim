@@ -20,13 +20,12 @@ interface Zone {
 }
 
 /**
- * Smart mode only: what the controller "sees". Each signalized approach gets a ribbon over its
+ * Smart mode only (the scene shows it with sim B): what the controller "sees". Each signalized approach gets a ribbon over its
  * lanes covering the detection range; brightness = detected vehicles, amber = bus, flashing
  * red/blue = emergency vehicle being given priority. The fixed loop has no detectors, so nothing
  * is drawn in Mode A.
  */
 export function DetectionZones({ network, layout, keys }: { network: Network; layout: RoadLayout; keys: string[] }) {
-  const view = useSimStore((s) => s.view)
   const zones = useMemo<Zone[]>(
     () =>
       keys.map((key) => {
@@ -67,7 +66,7 @@ export function DetectionZones({ network, layout, keys }: { network: Network; la
   })
 
   return (
-    <group position-y={LAYER_Y.marking + 0.02} visible={view === 'maxPressure'}>
+    <group position-y={LAYER_Y.marking + 0.02}>
       {zones.map((z) => (
         <mesh key={z.key} geometry={z.geometry} renderOrder={2}>
           <meshBasicMaterial

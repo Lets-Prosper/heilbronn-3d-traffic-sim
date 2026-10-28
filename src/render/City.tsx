@@ -3,6 +3,7 @@ import { useLayoutEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { useSimStore } from '../state/simStore'
 import type { CityGeometry } from '../data'
+import type { ControllerMode } from '../engine/controllers'
 import type { Network } from '../engine/network/types'
 import { CAR_COLORS, type CarPose } from './demoCars'
 import {
@@ -96,9 +97,9 @@ function TrafficLight({ x, z, rotY, state, bar }: Omit<SignalHead, 'key'> & { st
   )
 }
 
-/** Lights driven by the sim's published signal aspects (re-renders only when an aspect changes). */
-export function LiveTrafficLights({ heads }: { heads: SignalHead[] }) {
-  const signals = useSimStore((s) => s.signals)
+/** Lights driven by one sim's published signal aspects (re-renders only when an aspect changes). */
+export function LiveTrafficLights({ heads, mode }: { heads: SignalHead[]; mode: ControllerMode }) {
+  const signals = useSimStore((s) => s.signals[mode])
   return <TrafficLights heads={heads} stateOf={(h) => signals[h.key] ?? 'red'} />
 }
 
@@ -121,7 +122,7 @@ const MAX_PER_FLEET: Record<Fleet, number> = { car: MAX_CARS, bus: 200, emergenc
  * + emergency light bars, interpolated between the last two 10 Hz ticks every frame.
  * Seven draw calls total regardless of fleet size.
  */
-export function SimCars() {
+export function SimCars({ mode }: { mode: ControllerMode }) {
   const bodies = useRef<Record<Fleet, THREE.InstancedMesh | null>>({ car: null, bus: null, emergency: null })
   const brakes = useRef<Record<Fleet, THREE.InstancedMesh | null>>({ car: null, bus: null, emergency: null })
   const bars = useRef<THREE.InstancedMesh>(null)
@@ -158,7 +159,8 @@ export function SimCars() {
     const car = bodies.current.car
     const bar = bars.current
     if (!car || !bar) return
-    const { prev, curr, alpha } = useSimStore.getState()
+    const { frames, alpha } = useSimStore.getState()
+    const { prev, curr } = frames[mode]
     const { m, q, up, pos, one } = tmp
     const n: Record<Fleet, number> = { car: 0, bus: 0, emergency: 0 }
     const nb: Record<Fleet, number> = { car: 0, bus: 0, emergency: 0 }

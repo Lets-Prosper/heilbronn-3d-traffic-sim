@@ -1,6 +1,7 @@
 import { estimateEmissions } from '../engine/metrics/emissions'
 import type { MetricsSnapshot } from '../engine/metrics'
 import { useSimStore } from '../state/simStore'
+import { delta, fmt } from './format'
 
 interface Row {
   label: string
@@ -23,9 +24,6 @@ const ROWS: Row[] = [
   { label: 'NOₓ', unit: 'g', value: (m) => estimateEmissions(m).noxG, digits: 1, lowerIsBetter: true, hint: 'Idle time × TRL upper-bound rate' },
 ]
 
-function fmt(v: number, digits: number) {
-  return v.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })
-}
 
 /** Live A vs B comparison. Both columns come from sims at the same sim time, same seed + demand. */
 export function MetricsPanel() {
@@ -50,8 +48,7 @@ export function MetricsPanel() {
           {ROWS.map((r) => {
             const va = r.value(a)
             const vb = r.value(b)
-            const d = va > 0 ? ((vb - va) / va) * 100 : 0
-            const better = Math.abs(d) < 0.5 ? 'flat' : (d < 0) === r.lowerIsBetter ? 'good' : 'bad'
+            const d = delta(va, vb, r.lowerIsBetter)
             return (
               <tr key={r.label} title={r.hint}>
                 <th>
@@ -59,7 +56,7 @@ export function MetricsPanel() {
                 </th>
                 <td className={view === 'fixed' ? 'on' : ''}>{fmt(va, r.digits)}</td>
                 <td className={view === 'maxPressure' ? 'on' : ''}>{fmt(vb, r.digits)}</td>
-                <td className={`delta ${better}`}>{va > 0 ? `${d > 0 ? '+' : ''}${d.toFixed(0)}%` : '–'}</td>
+                <td className={`delta ${d.verdict}`}>{d.label}</td>
               </tr>
             )
           })}

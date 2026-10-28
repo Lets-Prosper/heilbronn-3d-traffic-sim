@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { useSimStore, type AmbulanceFrom } from '../state/simStore'
 
 const SPEEDS = [1, 2, 4, 8, 16]
@@ -16,12 +16,23 @@ export function Hud() {
   const speed = useSimStore((s) => s.speed)
   const demand = useSimStore((s) => s.demand)
   const [from, setFrom] = useState<AmbulanceFrom>('busiest')
+  // Publish where the bar ends (it wraps on narrow screens) so overlays can sit just below it.
+  const bar = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const el = bar.current
+    if (!el) return
+    const ro = new ResizeObserver(() => {
+      document.documentElement.style.setProperty('--hud-bottom', `${el.getBoundingClientRect().bottom}px`)
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
   const { setRunning, setSpeed, setDemand, restart, shot, pitchSetup, dispatchAmbulance } = useSimStore.getState()
   const clock = `${String(Math.floor(time / 60)).padStart(2, '0')}:${String(Math.floor(time % 60)).padStart(2, '0')}`
 
   return (
-    <div className="hud">
-      <strong title="Keys: Space play/pause · A / B fixed / smart · E ambulance · ↑↓ speed · R re-run · W / O camera">StadtFluss</strong>
+    <div className="hud" ref={bar}>
+      <strong title="Keys: Space play/pause · A / B fixed / smart · S side by side · E ambulance · ↑↓ speed · R re-run · W / O camera">StadtFluss</strong>
       <span className="clock">{clock}</span>
       <button onClick={() => setRunning(!running)}>{running ? 'Pause' : 'Play'}</button>
       <select value={speed} onChange={(e) => setSpeed(Number(e.target.value))} title="Sim speed">

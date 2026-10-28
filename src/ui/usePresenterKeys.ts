@@ -5,7 +5,7 @@ const SPEEDS = [1, 2, 4, 8, 16]
 
 /**
  * Presenter shortcuts (ignored while typing in a control):
- *   Space  play / pause          A / B  fixed loop / smart control
+ *   Space  play / pause          A / B  fixed loop / smart control   S  side by side
  *   E      ambulance (busiest side)   ↑ / ↓  faster / slower
  *   R      re-run both modes      W / O  worst junction / overview camera
  */
@@ -26,6 +26,9 @@ export function usePresenterKeys() {
           break
         case 'b':
           s.setView('maxPressure')
+          break
+        case 's':
+          s.setSplit(!s.split)
           break
         case 'e':
           s.dispatchAmbulance()

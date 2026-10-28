@@ -39,14 +39,15 @@ body,
   position: fixed;
   top: 12px;
   left: 12px;
-  right: 12px;
+  /* leave the top-right corner to the metrics panel */
+  right: 372px;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
   padding: 8px 12px;
   border-radius: 12px;
-  font-size: 13px;
+  font-size: 12.5px;
   font-variant-numeric: tabular-nums;
 }
 .hud select,
@@ -110,9 +111,31 @@ body,
   margin-right: 6px;
   vertical-align: 2px;
 }
+.mode-toggle .legend {
+  grid-column: 1 / -1;
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--soft);
+  padding: 4px 10px 2px;
+}
+.hud .group {
+  display: inline-flex;
+  gap: 2px;
+}
+.metrics .amb-table {
+  margin-top: 6px;
+  border-top: 1px solid #dde3ec;
+  width: 100%;
+}
+.metrics .amb-table th small {
+  color: var(--soft);
+  font-weight: 400;
+}
 .mode-toggle .knob {
   position: absolute;
-  inset: 6px auto 6px 6px;
+  top: 6px;
+  left: 6px;
+  height: 53px;
   width: calc(50% - 6px);
   border-radius: 999px;
   background: var(--fixed);
@@ -129,7 +152,9 @@ body,
 .metrics {
   position: fixed;
   right: 12px;
-  top: 72px;
+  top: 12px;
+  width: 336px;
+  box-sizing: border-box;
   padding: 12px 14px 10px;
   border-radius: 12px;
   font-size: 13px;
@@ -218,7 +243,7 @@ body,
   display: grid;
   place-items: center;
   pointer-events: none;
-  animation: flash-bg 1.6s ease-out forwards;
+  animation: flash-bg 0.9s ease-out forwards;
 }
 .flip-flash.smart {
   --c: rgb(28 158 107 / 0.35);
@@ -227,11 +252,11 @@ body,
   --c: rgb(229 96 59 / 0.3);
 }
 .flip-flash span {
-  font: 800 clamp(36px, 7vw, 84px) system-ui, sans-serif;
+  font: 800 clamp(28px, 4.5vw, 56px) system-ui, sans-serif;
   color: white;
   text-shadow: 0 4px 30px rgb(0 0 0 / 0.35);
   letter-spacing: -0.02em;
-  animation: flash-text 1.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  animation: flash-text 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
 }
 @keyframes flash-bg {
   0% {
@@ -261,7 +286,27 @@ body,
 @media (prefers-reduced-motion: reduce) {
   .flip-flash,
   .flip-flash span,
-  .mode-toggle .knob {
+  .mode-toggle .legend {
+  grid-column: 1 / -1;
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--soft);
+  padding: 4px 10px 2px;
+}
+.hud .group {
+  display: inline-flex;
+  gap: 2px;
+}
+.metrics .amb-table {
+  margin-top: 6px;
+  border-top: 1px solid #dde3ec;
+  width: 100%;
+}
+.metrics .amb-table th small {
+  color: var(--soft);
+  font-weight: 400;
+}
+.mode-toggle .knob {
     animation: none;
     transition: none;
   }
@@ -295,4 +340,77 @@ body,
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+/* Priority */
+.priority-badge {
+  position: fixed;
+  top: 120px;
+  left: calc(50% - 180px);
+  transform: translateX(-50%);
+  font-size: 13px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: #c81e1e;
+  color: white;
+  font-weight: 700;
+  box-shadow: 0 6px 24px rgb(200 30 30 / 0.4);
+  animation: pulse 0.8s ease-in-out infinite alternate;
+}
+@keyframes pulse {
+  to {
+    background: #1f4fd8;
+    box-shadow: 0 6px 24px rgb(31 79 216 / 0.4);
+  }
+}
+.ambulances {
+  position: fixed;
+  left: 12px;
+  bottom: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.amb {
+  backdrop-filter: blur(10px) saturate(1.4);
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 6px 24px rgb(20 30 50 / 0.14);
+  padding: 8px 12px;
+  border-radius: 10px;
+  min-width: 260px;
+}
+.amb small {
+  color: var(--soft);
+}
+.amb .soft {
+  color: var(--soft);
+}
+.amb .good {
+  color: var(--smart);
+  font-weight: 700;
+}
+.amb .bad {
+  color: var(--fixed);
+  font-weight: 700;
+}
+@media (prefers-reduced-motion: reduce) {
+  .priority-badge {
+    animation: none;
+  }
+}
+
+.timelapse {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 10px 20px;
+  border-radius: 999px;
+  background: rgb(20 26 38 / 0.72);
+  color: white;
+  font: 700 18px system-ui, sans-serif;
+  pointer-events: none;
 }

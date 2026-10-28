@@ -200,3 +200,73 @@ export function buildBrakeLightGeometry(): THREE.BufferGeometry {
   for (const g of lamps) g.dispose()
   return merged
 }
+
+type Part = [THREE.BufferGeometry, string]
+
+/** Merge boxes with baked vertex colors (hex), forward = +X. */
+function coloredParts(parts: Part[]): THREE.BufferGeometry {
+  const c = new THREE.Color()
+  const geos = parts.map(([g, hex]) => {
+    const ng = g.index ? g.toNonIndexed() : g
+    ng.deleteAttribute('uv')
+    c.set(hex)
+    const n = ng.getAttribute('position').count
+    const col = new Float32Array(n * 3)
+    for (let i = 0; i < n; i++) col.set([c.r, c.g, c.b], i * 3)
+    ng.setAttribute('color', new THREE.BufferAttribute(col, 3))
+    return ng
+  })
+  return mergeGeometries(geos, false)!
+}
+
+function box(w: number, h: number, d: number, x: number, y: number, z = 0) {
+  const g = new THREE.BoxGeometry(w, h, d)
+  g.translate(x, y, z)
+  return g
+}
+
+function wheels(xs: number[], halfTrack: number, r: number): Part[] {
+  return xs.flatMap((x) =>
+    [halfTrack, -halfTrack].map((z): Part => {
+      const w = new THREE.CylinderGeometry(r, r, 0.32, 12)
+      w.rotateX(Math.PI / 2)
+      w.translate(x, r, z)
+      return [w, '#1b1d21']
+    }),
+  )
+}
+
+/** 12 m city bus, centred, forward = +X. */
+export function buildBusGeometry(): THREE.BufferGeometry {
+  return coloredParts([
+    [box(11.8, 2.2, 2.5, 0, 1.55), '#d8392f'],
+    [box(11.4, 0.85, 2.54, -0.1, 2.05), '#20262e'], // window band
+    [box(11.8, 0.25, 2.45, 0, 2.95), '#f2f2ee'], // roof
+    [box(0.06, 1.2, 2.2, 5.92, 1.9), '#20262e'], // windscreen
+    ...wheels([3.9, -3.4], 1.05, 0.5),
+  ])
+}
+
+/** Ambulance-style van, centred, forward = +X. */
+export function buildEmergencyGeometry(): THREE.BufferGeometry {
+  return coloredParts([
+    [box(5.6, 2.0, 2.1, -0.2, 1.4), '#f7f7f2'],
+    [box(1.2, 1.1, 2.0, 2.4, 0.95), '#f7f7f2'], // bonnet
+    [box(5.62, 0.35, 2.12, -0.2, 1.15), '#d0201b'], // red stripe
+    [box(0.06, 0.7, 1.8, 1.82, 1.85), '#20262e'], // windscreen
+    ...wheels([1.9, -1.9], 0.9, 0.38),
+  ])
+}
+
+/** Light bar on the emergency vehicle's roof. */
+export function buildLightBarGeometry(): THREE.BufferGeometry {
+  return box(0.5, 0.18, 1.6, 1.3, 2.5)
+}
+
+/** Brake lamps for a vehicle of half-length `half`, in its local frame. */
+export function buildBrakeLightGeometryFor(half: number, y = 0.82, spread = 0.58): THREE.BufferGeometry {
+  const lamps = [spread, -spread].map((z) => box(0.1, 0.26, 0.55, -half - 0.03, y, z))
+  const merged = mergeGeometries(lamps, false)!
+  for (const g of lamps) g.dispose()
+  return merged
+}

@@ -14,6 +14,11 @@ export function ModeToggle() {
         <span className="tag">B</span> Smart control
       </button>
       <span className="knob" aria-hidden />
+      <span className="legend">
+        {smart
+          ? 'Detectors (blue zones) count every approach · priority for buses & ambulances'
+          : 'Timer only: 30 s / 30 s, blind to queues, buses and ambulances'}
+      </span>
     </div>
   )
 }

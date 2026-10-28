@@ -22,7 +22,7 @@ describe('departSide (right-hand traffic)', () => {
 
 describe('calibrated scenario', () => {
   it('maps every detector movement onto a connected network route at the counted rate', () => {
-    const sc = buildScenario(net, { hour: 7, backgroundRate: 0 })
+    const sc = buildScenario(net, { hour: 7, backgroundRate: 0, busHeadwayS: 0 })
     expect(sc.unmapped).toEqual([])
     expect(sc.movements.map((m) => m.tag).sort()).toEqual(Object.keys(DETECTORS).sort())
     for (const m of sc.movements) {
@@ -53,5 +53,16 @@ describe('calibrated scenario', () => {
     expect(base.movements.some((m) => m.assumed)).toBe(false)
     const through = buildScenario(net, { backgroundRate: 0, assumedThroughVph: 300 })
     expect(through.movements.filter((m) => m.assumed)).toHaveLength(2)
+  })
+})
+
+describe('transit + emergency routes', () => {
+  it('builds four straight-through routes and timetabled (illustrative) bus flows on them', () => {
+    const sc = buildScenario(net, { backgroundRate: 0, busHeadwayS: 600 })
+    expect(sc.through.map((t) => t.approach).sort()).toEqual(['east', 'north', 'south', 'west'])
+    const buses = sc.entries.filter((e) => e.kind === 'bus')
+    expect(buses).toHaveLength(4)
+    for (const b of buses) expect(b.headway).toBe(600)
+    expect(new Set(buses.map((b) => b.offset)).size).toBe(4) // staggered departures
   })
 })

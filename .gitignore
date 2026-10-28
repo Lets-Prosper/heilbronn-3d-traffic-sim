@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Team briefing, shared outside the repo
+docs/how-it-works.md

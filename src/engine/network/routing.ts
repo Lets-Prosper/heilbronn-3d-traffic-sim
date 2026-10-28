@@ -1,3 +1,4 @@
+import { turnAngle } from './conflicts'
 import type { Network } from './types'
 
 /** Nodes at the edge of the study area (or dead ends): at most one distinct neighbour. */
@@ -25,12 +26,22 @@ export function exitEdges(net: Network): number[] {
 /** Free-flow traversal time, s. */
 export const edgeCost = (net: Network, i: number) => net.edges[i].length / net.edges[i].speedLimit
 
-/** Successor edges, excluding a U-turn back along the same way unless it's the only option. */
+/** Turns sharper than this are U-turns (incl. across a dual-carriageway median), radians. */
+const UTURN_RAD = (125 * Math.PI) / 180
+
+/**
+ * Successor edges, excluding U-turns unless it's the only option: back along the same way, or
+ * any turn sharper than 125° (e.g. from one carriageway of a dual road into the other).
+ */
 export function successors(net: Network, edge: number): number[] {
   const e = net.edges[edge]
   const outs = net.nodes.get(e.to)!.out
-  const noUturn = outs.filter((j) => !(net.edges[j].to === e.from && net.edges[j].wayId === e.wayId))
-  return noUturn.length ? noUturn : outs
+  const ok = outs.filter((j) => {
+    const o = net.edges[j]
+    if (o.to === e.from && o.wayId === e.wayId) return false
+    return Math.abs(turnAngle(e, o)) < UTURN_RAD
+  })
+  return ok.length ? ok : outs
 }
 
 export interface PathTree {

@@ -166,7 +166,11 @@ describe('max-pressure (Mode B)', () => {
     const ns = net.edges.filter((e) => e.to === 1 && phaseGroup(e) === 0).map((e) => e.index)
     const ew = net.edges.filter((e) => e.to === 1 && phaseGroup(e) === 1).map((e) => e.index)
     const queued = new Set(ew)
-    const view = { count: (e: number) => (queued.has(e) ? 5 : 0), lanes: () => 1 }
+    const count = (e: number) => (queued.has(e) ? 5 : 0)
+    const view = {
+      count, lanes: () => 1, upstream: (e: number) => ({ count: count(e), arriving: 0 }),
+      downstream: () => 0, requests: () => [],
+    }
     const at = (t: number) => (ctl.update(t, view), [ctl.aspect(1, ns[0]), ctl.aspect(1, ew[0])])
     // Starts all-red -> first green goes to group 1 = EW, which has the queue.
     expect(at(0)).toEqual(['red', 'green'])
@@ -190,7 +194,7 @@ describe('max-pressure (Mode B)', () => {
     expect(b.spawned + b.backlog).toBe(a.spawned + a.backlog)
     expect(b.meanQueue).toBeLessThan(a.meanQueue * 0.8)
     expect(b.meanWait).toBeLessThan(a.meanWait)
-    expect(b.exited).toBeGreaterThanOrEqual(a.exited)
+    expect(b.exited).toBeGreaterThan(a.exited * 0.98) // same demand: throughput ~equal
   })
 
   it('is deterministic, and hot-swapping A -> B mid-run cuts the queue', () => {

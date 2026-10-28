@@ -7,6 +7,7 @@ import { useCityStore } from '../state/cityStore'
 import { useSimStore } from '../state/simStore'
 import { buildIntersections } from '../engine/controllers'
 import { Buildings, Cars, Ground, LiveTrafficLights, Roads, SimCars } from './City'
+import { DetectionZones } from './DetectionZones'
 import { demoCars } from './demoCars'
 import { buildRoadLayout } from './layout'
 import { signalHeads } from './signals'
@@ -61,10 +62,13 @@ function CityView({ city }: { city: CityGeometry }) {
   const init = useSimStore((s) => s.init)
   const layout = useMemo(() => buildRoadLayout(city.network), [city])
   // Heads only where the engine actually controls an approach.
+  const intersections = useMemo(() => buildIntersections(city.network), [city])
   const heads = useMemo(() => {
-    const keys = new Set(buildIntersections(city.network).flatMap((x) => x.approaches.map((a) => a.key)))
+    const keys = new Set(intersections.flatMap((x) => x.approaches.map((a) => a.key)))
     return signalHeads(city.network, layout, keys)
-  }, [city, layout])
+  }, [city, layout, intersections])
+  // Detection zones on every signalized approach smart control watches (junctions + on-demand crossings).
+  const zoneKeys = useMemo(() => intersections.flatMap((x) => x.approaches.map((a) => a.key)), [intersections])
   const stress = useMemo(() => (stressCars ? demoCars(city.network, layout, 7, stressCars) : null), [city, layout])
   useEffect(() => init(city.network, layout), [init, city, layout])
   return (
@@ -73,6 +77,7 @@ function CityView({ city }: { city: CityGeometry }) {
       <Roads network={city.network} layout={layout} />
       <Buildings city={city} />
       <LiveTrafficLights heads={heads} />
+      <DetectionZones network={city.network} layout={layout} keys={zoneKeys} />
       <SimCars />
       {stress && <Cars cars={stress} />}
     </>

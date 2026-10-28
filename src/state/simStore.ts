@@ -12,7 +12,7 @@
 // Signal aspects and metrics are React state: set only on change / at 4 Hz.
 import { create } from 'zustand'
 import { buildScenario, type Scenario, type ScenarioOptions } from '../data/scenario'
-import type { ControllerMode, Intersection } from '../engine/controllers'
+import { DEFAULT_MAX_PRESSURE, type ControllerMode, type Intersection } from '../engine/controllers'
 import { approachQueues, createSim, DT, type Sim } from '../engine/engine'
 import type { MetricsSnapshot } from '../engine/metrics'
 import type { Network } from '../engine/network/types'
@@ -37,12 +37,31 @@ export interface CameraShot {
   orbit?: boolean
 }
 
-export type DemoPhase = 'off' | 'before' | 'after'
 
-/** Demo preset: AM-peak counts ×2 plus an ASSUMED Karlsruher Str. through flow, so queues are visible. */
-export const DEMO_DEMAND: ScenarioOptions = { hour: 7, scale: 2, assumedThroughVph: 300 }
-/** Sim second at which the demo flips the city from Mode A to Mode B. */
-export const DEMO_FLIP_S = 180
+/** What smart-mode detectors see on one approach (for the detection overlay). */
+export interface Detection {
+  count: number
+  request?: 'bus' | 'emergency'
+}
+
+/** One ambulance dispatched into both sims at the same moment, and its trip time in each. */
+export interface AmbulanceRun {
+  tag: string
+  from: string
+  at: number
+  /** Seconds from dispatch to leaving the map, per mode (undefined = still driving). */
+  fixed?: number
+  maxPressure?: number
+}
+
+/** Detection zone length shown/used by smart mode, m (same value the controller counts over). */
+export const DETECTION_M = DEFAULT_MAX_PRESSURE.detectionM
+
+/** Pitch preset: AM-peak counts ×2 plus an ASSUMED Karlsruher Str. through flow, so queues are visible. */
+export const PITCH_DEMAND: ScenarioOptions = { hour: 7, scale: 2, assumedThroughVph: 300 }
+
+/** Where a dispatched ambulance comes from: a junction arm, or the arm with the longest queue right now. */
+export type AmbulanceFrom = 'busiest' | 'north' | 'east' | 'south' | 'west'
 
 interface SimStore {
   sims?: Record<ControllerMode, Sim>
@@ -67,7 +86,11 @@ interface SimStore {
   /** Most congested intersection under Mode A for the current demand. */
   worst?: Intersection
   camera?: CameraShot
-  demo: { phase: DemoPhase }
+  /** Smart-mode detector readings per approach key (published at 4 Hz). */
+  detections: Record<string, Detection>
+  /** Emergency pre-emption active somewhere in the displayed sim. */
+  preempting: boolean
+  ambulances: AmbulanceRun[]
   /** Bumped when the view flips (for the flash transition). */
   flipNonce: number
 
@@ -79,8 +102,13 @@ interface SimStore {
   setRunning(running: boolean): void
   setSpeed(speed: number): void
   shot(name: 'overview' | 'worst', orbit?: boolean): void
-  startDemo(): void
-  stopDemo(): void
+  /**
+   * Send an ambulance straight through the main junction, into both modes at the same sim
+   * instant. Nothing is ever dispatched automatically: the presenter decides when and from where.
+   */
+  dispatchAmbulance(from?: AmbulanceFrom): void
+  /** Load the pitch scenario, restart both modes, frame the worst junction. Starts nothing else. */
+  pitchSetup(): void
   advance(realDelta: number): void
 }
 
@@ -117,6 +145,35 @@ const snapshots = (sims: Record<ControllerMode, Sim>) =>
 
 let worstKey = ''
 
+
+/** Smart-mode detector readings + ambulance results, published at HUD rate. */
+function observe(smart: Sim, runs: AmbulanceRun[], sims: Record<ControllerMode, Sim>) {
+  const detections: Record<string, Detection> = {}
+  const reqs = smart.view.requests()
+  let preempting = false
+  for (const x of smart.intersections) {
+    for (const a of x.approaches) {
+      const r = reqs.find((q) => q.node === a.node && q.edge === a.edge && (q.kind === 'emergency' || !detections[a.key]?.request))
+      if (r?.kind === 'emergency') preempting = true
+      detections[a.key] = { count: smart.view.upstream(a.edge, DETECTION_M, 0).count, request: r?.kind }
+    }
+  }
+  let changed = false
+  const ambulances = runs.map((run) => {
+    const next = { ...run }
+    for (const mode of MODES) {
+      if (next[mode] !== undefined) continue
+      const trip = sims[mode].metrics.trips.find((tr) => tr.tag === run.tag)
+      if (trip) {
+        next[mode] = trip.travel
+        changed = true
+      }
+    }
+    return next
+  })
+  return changed ? { detections, preempting, ambulances } : { detections, preempting }
+}
+
 export const useSimStore = create<SimStore>((set, get) => ({
   seed: num('seed') ?? 1,
   view: params.get('mode') === 'B' ? 'maxPressure' : 'fixed',
@@ -125,6 +182,7 @@ export const useSimStore = create<SimStore>((set, get) => ({
     scale: num('scale') ?? 1,
     backgroundRate: num('bg') ?? 0.004,
     assumedThroughVph: num('through') ?? 0,
+    busHeadwayS: num('bus') ?? 600,
   },
   running: true,
   speed: num('speed') ?? 1,
@@ -134,13 +192,15 @@ export const useSimStore = create<SimStore>((set, get) => ({
   alpha: 0,
   signals: {},
   hudClock: 0,
-  demo: { phase: 'off' },
   flipNonce: 0,
+  detections: {},
+  preempting: false,
+  ambulances: [],
 
   init(network, layout) {
     set({ network, layout })
     get().restart()
-    if (params.has('demo')) get().startDemo()
+    if (params.has('pitch') || params.has('demo')) get().pitchSetup()
   },
   restart() {
     const { network, layout, seed, view, demand } = get()
@@ -157,6 +217,7 @@ export const useSimStore = create<SimStore>((set, get) => ({
     set({
       sims, scenario, worst, accumulator: 0, prev: frame, curr: frame, alpha: 0,
       signals: publishSignals(sims[view], {}) ?? {}, metrics: snapshots(sims), hudClock: 0,
+      ambulances: [], detections: {}, preempting: false,
     })
   },
   setDemand(d) {
@@ -186,14 +247,31 @@ export const useSimStore = create<SimStore>((set, get) => ({
       set({ camera: { position: [c.x + 170, 190, c.z + 230], target: [c.x, 0, c.z], nonce, orbit } })
     }
   },
-  startDemo() {
-    set({ demand: { ...get().demand, ...DEMO_DEMAND }, demo: { phase: 'before' }, speed: 8, running: true })
+  dispatchAmbulance(from = 'busiest') {
+    const { sims, scenario, worst } = get()
+    if (!sims || !scenario?.through.length) return
+    // A chosen arm, or the straight-through route whose junction approach is most congested under Mode A.
+    let best = scenario.through.find((t) => t.approach === from) ?? scenario.through[0]
+    let most = from === 'busiest' ? -1 : Infinity
+    for (const t of from === 'busiest' ? scenario.through : []) {
+      const a = worst?.approaches.find((ap) => t.route.includes(ap.edge))
+      const q = a ? sims.fixed.view.upstream(a.edge, 150, 0).count : 0
+      if (q > most) {
+        most = q
+        best = t
+      }
+    }
+    const n = get().ambulances.length + 1
+    const tag = `ambulance-${n}`
+    sims.fixed.dispatch(best.route, 'emergency', tag)
+    sims.maxPressure.dispatch(best.route, 'emergency', tag)
+    set({ ambulances: [...get().ambulances, { tag, from: `${best.street} from the ${best.approach}`, at: sims.fixed.state.time }] })
+  },
+  pitchSetup() {
+    set({ demand: { ...get().demand, ...PITCH_DEMAND } })
     get().setView('fixed')
     get().restart()
     get().shot('worst')
-  },
-  stopDemo() {
-    set({ demo: { phase: 'off' } })
   },
   advance(realDelta) {
     const { sims, network, layout, running, speed, view } = get()
@@ -221,14 +299,9 @@ export const useSimStore = create<SimStore>((set, get) => ({
     if (hudClock >= HUD_INTERVAL_S) {
       patch.metrics = snapshots(sims)
       patch.hudClock = 0
+      Object.assign(patch, observe(sims.maxPressure, get().ambulances, sims))
     } else patch.hudClock = hudClock
     set(patch)
 
-    // Demo: before -> after flip at a fixed sim time, then slow down and orbit.
-    if (get().demo.phase === 'before' && shown.state.time >= DEMO_FLIP_S) {
-      set({ demo: { phase: 'after' }, speed: 2 })
-      get().setView('maxPressure')
-      get().shot('worst', true)
-    }
   },
 }))

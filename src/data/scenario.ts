@@ -26,6 +26,18 @@ export interface ScenarioOptions {
   backgroundRate?: number
   /** ASSUMED (not measured) Karlsruher Straße through flow per direction, veh/h. */
   assumedThroughVph?: number
+  /**
+   * ILLUSTRATIVE bus service: one bus every N s on each of the four straight-through
+   * routes (both directions of both streets). 0 = no buses. Real lines/timetables need GTFS.
+   */
+  busHeadwayS?: number
+}
+
+/** A straight run through the junction from one side — used for buses and ambulance dispatch. */
+export interface ThroughRoute {
+  approach: Approach
+  street: string
+  route: number[]
 }
 
 export interface MovementFlow {
@@ -39,6 +51,8 @@ export interface MovementFlow {
 
 export interface Scenario {
   entries: EntryFlow[]
+  /** Straight-through routes per approach (for buses and emergency dispatch). */
+  through: ThroughRoute[]
   movements: MovementFlow[]
   /** Movements that couldn't be mapped onto the network. */
   unmapped: string[]
@@ -97,7 +111,7 @@ function armPoint(net: Network, e: NetEdge, dir: 'up' | 'down', dist = 30) {
 
 export function buildScenario(net: Network, opts: ScenarioOptions = {}): Scenario {
   const o: Required<ScenarioOptions> = {
-    hour: 7, day: 'weekday', scale: 1, backgroundRate: 0.004, assumedThroughVph: 0, ...opts,
+    hour: 7, day: 'weekday', scale: 1, backgroundRate: 0.004, assumedThroughVph: 0, busHeadwayS: 600, ...opts,
   }
   const J = junctionNodes(net)
   const inJ = (id: number) => J.has(id)
@@ -183,5 +197,21 @@ export function buildScenario(net: Network, opts: ScenarioOptions = {}): Scenari
 
   const flows: EntryFlow[] = movements.map((m) => ({ edge: m.route[0], rate: m.vph / 3600, route: m.route, tag: m.tag }))
   if (o.backgroundRate > 0) for (const edge of entries) flows.push({ edge, rate: o.backgroundRate, tag: 'background' })
-  return { entries: flows, movements, unmapped, options: o }
+
+  const through: ThroughRoute[] = []
+  for (const [approach, street] of [
+    ['east', 'Karlsruher Straße'], ['west', 'Karlsruher Straße'], ['north', 'Theresienstraße'], ['south', 'Theresienstraße'],
+  ] as const) {
+    const route = routeFor(approach, street, 'straight')
+    if (route) through.push({ approach, street, route })
+  }
+  if (o.busHeadwayS > 0) {
+    through.forEach((t, i) =>
+      flows.push({
+        edge: t.route[0], rate: 0, route: t.route, kind: 'bus', tag: `bus-${t.approach}`,
+        headway: o.busHeadwayS, offset: 30 + (i * o.busHeadwayS) / through.length,
+      }),
+    )
+  }
+  return { entries: flows, through, movements, unmapped, options: o }
 }

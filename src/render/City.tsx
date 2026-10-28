@@ -5,7 +5,17 @@ import { useSimStore } from '../state/simStore'
 import type { CityGeometry } from '../data'
 import type { Network } from '../engine/network/types'
 import { CAR_COLORS, type CarPose } from './demoCars'
-import { buildBrakeLightGeometry, buildBuildingGeometry, buildCarGeometry, buildRoadGeometries, LAYER_Y } from './geometry'
+import {
+  buildBrakeLightGeometry,
+  buildBrakeLightGeometryFor,
+  buildBuildingGeometry,
+  buildBusGeometry,
+  buildCarGeometry,
+  buildEmergencyGeometry,
+  buildLightBarGeometry,
+  buildRoadGeometries,
+  LAYER_Y,
+} from './geometry'
 import type { RoadLayout } from './layout'
 import type { SignalHead, SignalState } from './signals'
 import { MAX_CARS, PALETTE } from './theme'
@@ -102,54 +112,105 @@ export function TrafficLights({ heads, stateOf }: { heads: SignalHead[]; stateOf
   )
 }
 
+const FLEETS = ['car', 'bus', 'emergency'] as const
+type Fleet = (typeof FLEETS)[number]
+const MAX_PER_FLEET: Record<Fleet, number> = { car: MAX_CARS, bus: 200, emergency: 50 }
+
 /**
- * Engine vehicles: one InstancedMesh for bodies + one for brake lights (stopped cars only),
- * interpolated between the last two 10 Hz ticks every frame. Two draw calls total.
+ * Engine vehicles: one InstancedMesh per vehicle kind + brake lights (stopped vehicles only)
+ * + emergency light bars, interpolated between the last two 10 Hz ticks every frame.
+ * Seven draw calls total regardless of fleet size.
  */
 export function SimCars() {
-  const cars = useRef<THREE.InstancedMesh>(null)
-  const brakes = useRef<THREE.InstancedMesh>(null)
-  const geometry = useMemo(() => buildCarGeometry(), [])
-  const brakeGeometry = useMemo(() => buildBrakeLightGeometry(), [])
-  useLayoutEffect(() => () => (geometry.dispose(), brakeGeometry.dispose()), [geometry, brakeGeometry])
+  const bodies = useRef<Record<Fleet, THREE.InstancedMesh | null>>({ car: null, bus: null, emergency: null })
+  const brakes = useRef<Record<Fleet, THREE.InstancedMesh | null>>({ car: null, bus: null, emergency: null })
+  const bars = useRef<THREE.InstancedMesh>(null)
+  const barMat = useRef<THREE.MeshStandardMaterial>(null)
+  const geo = useMemo(
+    () => ({
+      body: { car: buildCarGeometry(), bus: buildBusGeometry(), emergency: buildEmergencyGeometry() },
+      brake: {
+        car: buildBrakeLightGeometry(),
+        bus: buildBrakeLightGeometryFor(5.9, 0.9, 1.0),
+        emergency: buildBrakeLightGeometryFor(3.0, 1.0, 0.8),
+      },
+      bar: buildLightBarGeometry(),
+    }),
+    [],
+  )
+  useLayoutEffect(
+    () => () => {
+      for (const f of FLEETS) {
+        geo.body[f].dispose()
+        geo.brake[f].dispose()
+      }
+      geo.bar.dispose()
+    },
+    [geo],
+  )
   const tmp = useMemo(
     () => ({ m: new THREE.Matrix4(), q: new THREE.Quaternion(), up: new THREE.Vector3(0, 1, 0), pos: new THREE.Vector3(), one: new THREE.Vector3(1, 1, 1) }),
     [],
   )
   const palette = useMemo(() => CAR_COLORS.map((c) => new THREE.Color(c)), [])
 
-  useFrame(() => {
-    const mesh = cars.current
-    const lamps = brakes.current
-    if (!mesh || !lamps) return
+  useFrame(({ clock }) => {
+    const car = bodies.current.car
+    const bar = bars.current
+    if (!car || !bar) return
     const { prev, curr, alpha } = useSimStore.getState()
     const { m, q, up, pos, one } = tmp
-    let i = 0
-    let b = 0
+    const n: Record<Fleet, number> = { car: 0, bus: 0, emergency: 0 }
+    const nb: Record<Fleet, number> = { car: 0, bus: 0, emergency: 0 }
     for (const [id, pose] of curr) {
-      if (i >= MAX_CARS) break
+      const f = pose.kind
+      const mesh = bodies.current[f]
+      if (!mesh || n[f] >= MAX_PER_FLEET[f]) continue
       const p = interpolate(prev, pose, id, alpha)
       q.setFromAxisAngle(up, p.yaw)
       m.compose(pos.set(p.x, 0, p.z), q, one)
-      mesh.setMatrixAt(i, m)
-      mesh.setColorAt(i, palette[(id * 7919) % palette.length])
-      i++
-      if (p.stopped) lamps.setMatrixAt(b++, m)
+      mesh.setMatrixAt(n[f], m)
+      if (f === 'car') mesh.setColorAt(n[f], palette[(id * 7919) % palette.length])
+      if (f === 'emergency') bar.setMatrixAt(n.emergency, m)
+      n[f]++
+      if (p.stopped) brakes.current[f]?.setMatrixAt(nb[f]++, m)
     }
-    mesh.count = i
-    lamps.count = b
-    mesh.instanceMatrix.needsUpdate = true
-    lamps.instanceMatrix.needsUpdate = true
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
+    for (const f of FLEETS) {
+      const mesh = bodies.current[f]!
+      const b = brakes.current[f]!
+      mesh.count = n[f]
+      b.count = nb[f]
+      mesh.instanceMatrix.needsUpdate = true
+      b.instanceMatrix.needsUpdate = true
+    }
+    if (car.instanceColor) car.instanceColor.needsUpdate = true
+    bar.count = n.emergency
+    bar.instanceMatrix.needsUpdate = true
+    // Blue lights: alternate flash ~3 Hz.
+    if (barMat.current) barMat.current.emissiveIntensity = Math.sin(clock.elapsedTime * 19) > 0 ? 6 : 0.3
   })
 
   return (
     <>
-      <instancedMesh ref={cars} args={[geometry, undefined, MAX_CARS]} castShadow receiveShadow frustumCulled={false}>
-        <meshStandardMaterial vertexColors roughness={0.45} metalness={0.15} />
-      </instancedMesh>
-      <instancedMesh ref={brakes} args={[brakeGeometry, undefined, MAX_CARS]} frustumCulled={false}>
-        <meshStandardMaterial color="#ff2a1a" emissive="#ff2a1a" emissiveIntensity={3} toneMapped={false} />
+      {FLEETS.map((f) => (
+        <instancedMesh
+          key={f}
+          ref={(r) => void (bodies.current[f] = r)}
+          args={[geo.body[f], undefined, MAX_PER_FLEET[f]]}
+          castShadow
+          receiveShadow
+          frustumCulled={false}
+        >
+          <meshStandardMaterial vertexColors roughness={0.45} metalness={0.15} />
+        </instancedMesh>
+      ))}
+      {FLEETS.map((f) => (
+        <instancedMesh key={`b-${f}`} ref={(r) => void (brakes.current[f] = r)} args={[geo.brake[f], undefined, MAX_PER_FLEET[f]]} frustumCulled={false}>
+          <meshStandardMaterial color="#ff2a1a" emissive="#ff2a1a" emissiveIntensity={3} toneMapped={false} />
+        </instancedMesh>
+      ))}
+      <instancedMesh ref={bars} args={[geo.bar, undefined, MAX_PER_FLEET.emergency]} frustumCulled={false}>
+        <meshStandardMaterial ref={barMat} color="#2f6bff" emissive="#2f6bff" emissiveIntensity={6} toneMapped={false} />
       </instancedMesh>
     </>
   )

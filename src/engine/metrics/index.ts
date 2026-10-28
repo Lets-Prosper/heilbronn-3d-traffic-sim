@@ -1,4 +1,5 @@
 // Metrics accumulator. Pure TS only (no React/Three/DOM).
+import type { VehicleKind } from '../vehicles'
 
 /** Below this speed a vehicle counts as stopped (queued / idling), m/s. */
 export const STOPPED_SPEED = 0.5
@@ -7,6 +8,10 @@ export const MOVING_SPEED = 2
 
 export interface CompletedTrip {
   id: number
+  kind: VehicleKind
+  tag?: string
+  /** Travel time beyond the unimpeded (free-flow) time, s. */
+  delay: number
   entry: number
   exit: number
   /** Seconds spent stopped. */
@@ -41,6 +46,14 @@ export interface MetricsSnapshot {
   stops: number
   /** Σ vPeak² over stops, m²/s² — re-acceleration kinetic energy per unit mass ×2. */
   stopV2Sum: number
+  /** Stops per vehicle that entered the network — the "smoothness" figure. */
+  stopsPerVehicle: number
+  /** Completed bus trips and their mean delay vs free flow, s. */
+  busTrips: number
+  busDelay: number
+  /** Completed emergency trips and their mean delay vs free flow, s. */
+  emergencyTrips: number
+  emergencyDelay: number
 }
 
 /** Window for `queueRecent`, s. */
@@ -87,7 +100,12 @@ export function createMetrics(tickHz = 10) {
       let w = 0
       let wMax = 0
       let tr = 0
+      const kd = { bus: [0, 0], emergency: [0, 0] }
       for (const t of trips) {
+        if (t.kind !== 'car') {
+          kd[t.kind][0]++
+          kd[t.kind][1] += t.delay
+        }
         w += t.wait
         tr += t.travel
         if (t.wait > wMax) wMax = t.wait
@@ -109,6 +127,11 @@ export function createMetrics(tickHz = 10) {
         totalIdle,
         stops,
         stopV2Sum,
+        stopsPerVehicle: spawned ? stops / spawned : 0,
+        busTrips: kd.bus[0],
+        busDelay: kd.bus[0] ? kd.bus[1] / kd.bus[0] : 0,
+        emergencyTrips: kd.emergency[0],
+        emergencyDelay: kd.emergency[0] ? kd.emergency[1] / kd.emergency[0] : 0,
       }
     },
   }
